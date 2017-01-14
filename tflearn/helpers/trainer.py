@@ -564,6 +564,9 @@ class TrainOp(object):
         self.acc_value = None
         self.val_acc = None
 
+        self.loss_avg_op = None
+        self.acc_avg_op = None
+
         if step_tensor is None:
             with self.graph.as_default():
                 self.training_steps = tf.Variable(0., name="Training_step",
@@ -641,7 +644,7 @@ class TrainOp(object):
         with tf.name_scope(self.name):
             lss = [self.loss] + tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
             total_loss = tf.add_n(lss, name="Total_Loss")
-            loss_avg_op = summaries.add_loss_summaries(
+            self.loss_avg_op = summaries.add_loss_summaries(
                 total_loss,
                 self.loss,
                 regul_losses_collection_key=tf.GraphKeys.REGULARIZATION_LOSSES,
@@ -649,13 +652,13 @@ class TrainOp(object):
                 summaries_collection_key=self.name + "_training_summaries",
                 exp_moving_avg=0.9,
                 ema_num_updates=self.training_steps)
+            self.acc_avg_op = acc_avg_op
 
             # Compute gradients operations
-            with tf.control_dependencies([loss_avg_op, acc_avg_op]):
-                self.grad = tf.gradients(total_loss, self.train_vars)
-                if clip_gradients > 0.0:
-                    self.grad, self.grad_norm = \
-                        tf.clip_by_global_norm(self.grad, clip_gradients)
+            self.grad = tf.gradients(total_loss, self.train_vars)
+            if clip_gradients > 0.0:
+                self.grad, self.grad_norm = \
+                    tf.clip_by_global_norm(self.grad, clip_gradients)
 
             self.grad = list(zip(self.grad, self.train_vars))
             self.apply_grad = self.optimizer.apply_gradients(
@@ -770,6 +773,7 @@ class TrainOp(object):
 
         feed_batch = self.train_dflow.next()
         tflearn.is_training(True, session=self.session)
+        _, _ = self.session.run([self.loss_avg_op, self.acc_avg_op], feed_batch)
         _, train_summ_str = self.session.run([self.train, self.summ_op],
                                              feed_batch)
 
